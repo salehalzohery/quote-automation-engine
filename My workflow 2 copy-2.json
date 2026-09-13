@@ -1,0 +1,380 @@
+{
+  "name": "My workflow 2 copy",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.pdfbolt.com/v1/direct",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "API-KEY",
+              "value": "=YOUR_API_KEY_HERE"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"html\": \"{{ $json.htmlBase64 }}\"\n}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -576,
+        1296
+      ],
+      "id": "c9166317-ef8c-4aaa-b5be-0cd271f54517",
+      "name": "HTTP Request1"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        240,
+        656
+      ],
+      "id": "02019efb-064a-4726-9f77-d8857e615f22",
+      "name": "Merge"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.resend.com/emails",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_API_KEY_HERE"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"from\": \"info@quoteflowing.com\",\n  \"to\": [\"{{ $('Code in JavaScript2').first().json.clientEmail }}\"],\n  \"subject\": \"فاتورتك الإلكترونية / Your Invoice\",\n  \"html\": \"<p>مرحباً، تجد برفقه الفاتورة الخاصة بك.</p>\",\n  \"attachments\": [\n    {\n      \"filename\": \"Invoice.pdf\",\n      \"content\": \"{{ $json.pdfBase64 }}\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -144,
+        1296
+      ],
+      "id": "afe71958-59e7-4b14-94bc-392bbbff9fe5",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const binaryBuffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nreturn [{\n  json: {\n    ...$input.first().json,\n    pdfBase64: binaryBuffer.toString('base64')\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -368,
+        1296
+      ],
+      "id": "463f5a89-9654-4973-8aa7-4edffbda2454",
+      "name": "Code in JavaScript1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. بيانات العميل والطلب من Webhook\nconst rawWebhook = $('Webhook1').first()?.json?.body?.data || {};\nconst webhookProps = rawWebhook.properties || rawWebhook;\n\n// دالة مرنة لاستخراج القيمة مهما كان نوع الحقل بـ Notion\nfunction extractAny(val) {\n  if (!val && val !== 0) return '';\n  if (typeof val === 'string' || typeof val === 'number') return String(val);\n  if (Array.isArray(val)) {\n    if (val.length === 0) return '';\n    return val.map(v => extractAny(v)).join('');\n  }\n  if (typeof val === 'object') {\n    if (val.plain_text) return val.plain_text;\n    if (val.text?.content) return val.text.content;\n    if (val.url) return val.url;\n    if (val.email) return val.email;\n    if (val.phone_number) return val.phone_number;\n    if (val.name) return val.name;\n    if (val.title) return extractAny(val.title);\n    if (val.rich_text) return extractAny(val.rich_text);\n    if (val.file?.url) return val.file.url;\n    if (val.external?.url) return val.external.url;\n    if (val.files) return extractAny(val.files);\n  }\n  return '';\n}\n\n// استخراج بيانات العميل والماليات\nconst clientName = extractAny(webhookProps['Client Name']) || '';\nlet clientEmail = extractAny(webhookProps['Client Email']) || '';\n\n// معالجة البريد الإلكتروني لمنع خطأ Resend (استبدال الإيميلات الوهمية أو الفارغة)\nif (!clientEmail || clientEmail.includes('example.com')) {\n  clientEmail = 'salehalzohery@gmail.com'; // اكتب إيميلك الحقيقي هنا للاختبار\n}\n\nconst rawAmount = $('Get Quote Data1').first().json.property_amount_details || '0';\nconst rawDiscount = (parseFloat($('Get Quote Data1').first().json.property_discount) * 100) || 0;\n\n// 2. قراءة بيانات الشركة من Get Company Settings\nlet companyName = \"اسم الشركة\";\nlet companyLogo = \"\";\nlet primaryColor = \"#2c3e50\";\nlet companyEmail = \"\";\nlet companyPhone = \"\";\n\ntry {\n  const nodeData = $('Get Company Settings1').first()?.json || {};    \n  const props = nodeData.properties || nodeData;\n\n  const getFlexProp = (keyName) => {\n    if (!props) return '';\n    const key = Object.keys(props).find(k => k.trim().toLowerCase() === keyName.trim().toLowerCase());\n    return key ? extractAny(props[key]) : '';\n  };\n\n  companyName = getFlexProp('property_company_name') || companyName;\n  companyLogo = getFlexProp('property_company_logo_url') || companyLogo;\n  primaryColor = getFlexProp('property_primary_color') || primaryColor;\n  companyEmail = getFlexProp('property_company_email') || companyEmail;\n  companyPhone = getFlexProp('property_company_phone') || companyPhone;\n} catch (e) {}\n\n// 3. الحسابات والرياضيات\nconst subtotal = parseFloat(String(rawAmount).replace(/[^0-9.]/g, '')) || 0;\nlet discountPercent = parseFloat(String(rawDiscount).replace(/[^0-9.]/g, '')) || 0;\n\nif (discountPercent > 0 && discountPercent < 1) {\n  discountPercent = discountPercent * 100;\n}\n\nconst invoiceNumber = `INV-${Date.now().toString().slice(-6)}`;\nconst invoiceDate = new Date().toLocaleDateString('ar-SA', { year: 'numeric', month: 'long', day: 'numeric' });\n\nconst discountAmount = subtotal * (discountPercent / 100);\nconst afterDiscount = subtotal - discountAmount;\nconst vat = afterDiscount * 0.15;\nconst total = afterDiscount + vat;\n\n// 4. هيكل HTML الهجين للـ PDF\nconst htmlContent = `<!DOCTYPE html>\n<html dir=\"rtl\" lang=\"ar\">\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body { font-family: Arial, sans-serif; direction: rtl; text-align: right; color: #333; margin: 0; padding: 20px; }\n    .header-table, .info-table, .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }\n    .header-table td { vertical-align: middle; }\n    .info-table { background-color: #f8f9fa; border-radius: 6px; }\n    .info-table td { padding: 12px; vertical-align: top; width: 50%; }\n    .data-table th, .data-table td { border: 1px solid #e0e0e0; padding: 10px; text-align: right; }\n    .data-table th { background-color: ${primaryColor}; color: #ffffff; font-weight: bold; }\n    .text-left { text-align: left !important; }\n    .total-row { background-color: #f1f1f1; font-weight: bold; font-size: 15px; }\n  </style>\n</head>\n<body>\n\n  <!-- الهيدر واللوجو -->\n  <table class=\"header-table\" style=\"border-bottom: 3px solid ${primaryColor}; padding-bottom: 12px;\">\n    <tr>\n      <td style=\"width: 50%;\">\n        ${companyLogo ? `<img src=\"${companyLogo}\" style=\"max-height: 70px; max-width: 220px;\" />` : `<h2 style=\"color: ${primaryColor}; margin:0;\">${companyName}</h2>`}\n      </td>\n      <td class=\"text-left\" style=\"width: 50%;\">\n        <h3 style=\"color: ${primaryColor}; margin: 0 0 5px 0;\">عرض سعر / فاتورة</h3>\n        <div style=\"font-size: 13px; color: #555;\">رقم الفاتورة: <b>${invoiceNumber}</b></div>\n        <div style=\"font-size: 13px; color: #555;\">التاريخ: ${invoiceDate}</div>\n      </td>\n    </tr>\n  </table>\n\n  <!-- بيانات الطرفين -->\n  <table class=\"info-table\">\n    <tr>\n      <td>\n        <strong style=\"color: ${primaryColor}; display: block; margin-bottom: 5px;\">صادرة من:</strong>\n        <div style=\"font-size: 14px; margin-bottom: 3px;\"><b>${companyName}</b></div>\n        ${companyEmail ? `<div style=\"font-size: 13px; color: #555;\">البريد: ${companyEmail}</div>` : ''}\n        ${companyPhone ? `<div style=\"font-size: 13px; color: #555;\">الهاتف: ${companyPhone}</div>` : ''}\n      </td>\n      <td class=\"text-left\">\n        <strong style=\"color: ${primaryColor}; display: block; margin-bottom: 5px;\">موجهة إلى:</strong>\n        <div style=\"font-size: 14px; margin-bottom: 3px;\"><b>${clientName}</b></div>\n        ${clientEmail ? `<div style=\"font-size: 13px; color: #555;\">${clientEmail}</div>` : ''}\n      </td>\n    </tr>\n  </table>\n\n  <!-- الجدول المالي -->\n  <table class=\"data-table\">\n    <thead>\n      <tr>\n        <th>البند</th>\n        <th class=\"text-left\">المبلغ (ر.س)</th>\n      </tr>\n    </thead>\n    <tbody>\n      <tr>\n        <td>المبلغ الأساسي</td>\n        <td class=\"text-left\">${subtotal.toFixed(2)}</td>\n      </tr>\n      ${discountPercent > 0 ? `\n      <tr style=\"color: #c0392b;\">\n        <td>الخصم (${discountPercent}%)</td>\n        <td class=\"text-left\">-${discountAmount.toFixed(2)}</td>\n      </tr>\n      ` : ''}\n      <tr>\n        <td>ضريبة القيمة المضافة (15%)</td>\n        <td class=\"text-left\">${vat.toFixed(2)}</td>\n      </tr>\n      <tr class=\"total-row\">\n        <td style=\"color: ${primaryColor};\">الإجمالي النهائي</td>\n        <td class=\"text-left\" style=\"color: ${primaryColor};\">${total.toFixed(2)}</td>\n      </tr>\n    </tbody>\n  </table>\n\n</body>\n</html>`;\n\n// 5. تحويل الـ HTML وتنظيف سلسلة Base64 نهائياً من أي مسافات أو أسطر جديدة\nconst htmlBase64 = Buffer.from(htmlContent, 'utf-8')\n  .toString('base64')\n  .replace(/[\\r\\n\\s]+/g, '');\n\nreturn [\n  {\n    json: {\n      html: htmlContent,\n      htmlBase64: htmlBase64,\n      clientEmail: clientEmail,\n      clientName: clientName\n    }\n  }\n];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -768,
+        1296
+      ],
+      "id": "a996c5b7-aee1-479d-ae6c-13f1be503107",
+      "name": "Code in JavaScript2",
+      "executeOnce": true
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "33031bf9-b222-496c-940c-2e68a14bb72a",
+        "options": {
+          "responseCode": {
+            "values": {}
+          },
+          "responseData": "={\"success\": true}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1312,
+        1008
+      ],
+      "id": "b7db71a1-dff4-48c8-b48b-f1f4b4188405",
+      "name": "Webhook1",
+      "webhookId": "33031bf9-b222-496c-940c-2e68a14bb72a"
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "get",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Webhook1').first().json.body.data.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        -1440,
+        704
+      ],
+      "id": "6ae86e64-1510-47e9-918f-25d4521ff131",
+      "name": "Get Quote Data1",
+      "credentials": {
+        "notionApi": {
+          "id": "MfSwwvUxNNH0qBwQ",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "databasePage",
+        "operation": "getAll",
+        "dataSourceId": {
+          "__rl": true,
+          "value": "YOUR_DATABASE_ID",
+          "mode": "list",
+          "cachedResultName": "Company Settings",
+          "cachedResultUrl": "https://app.notion.com/p/3bacf5e4db328002bf6ceae8181c8b95"
+        },
+        "filterType": "manual",
+        "filters": {
+          "conditions": [
+            {
+              "key": "Company ID|rich_text",
+              "condition": "equals",
+              "richTextValue": "={{ $('Get Quote Data1').item.json['property_company_id'] }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        -320,
+        688
+      ],
+      "id": "6dae5635-61c8-4d7c-a14c-47d42744cd00",
+      "name": "Get Company Settings1",
+      "credentials": {
+        "notionApi": {
+          "id": "MfSwwvUxNNH0qBwQ",
+          "name": "Notion account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "c1d18779-4213-40c4-8415-8f7c6b5807bf",
+              "leftValue": "={{ $json.property_quote_status }}",
+              "rightValue": "تم الارسال ",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -896,
+        352
+      ],
+      "id": "2649978c-4eb0-49ed-a92b-9391acf4107e",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=  https://api.notion.com/v1/pages/{{ $('Get Quote Data1').item.json.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer YOUR_API_KEY_HERE"
+            },
+            {
+              "name": "Notion-Version",
+              "value": "2022-06-28"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"properties\": {\n    \"Quote Status\": {\n      \"status\": { \"name\": \"تم الارسال\" }\n    }\n  }\n}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.5,
+      "position": [
+        -656,
+        176
+      ],
+      "id": "058541e7-17dc-4d39-829d-e147aa338582",
+      "name": "HTTP Request2"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript1": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript2": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook1": {
+      "main": [
+        [
+          {
+            "node": "Get Quote Data1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Quote Data1": {
+      "main": [
+        [
+          {
+            "node": "Get Company Settings1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Company Settings1": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "5b49a797-b2b3-4253-a83e-5d930beb24f3",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "b7fd5ab9e0c18512eadf995badd9fc608363baa2672b4edda2cca5ce8f7816b7"
+  },
+  "nodeGroups": [],
+  "id": "HY3eQ4RBC2aZGohG",
+  "tags": []
+}
